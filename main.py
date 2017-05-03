@@ -6,6 +6,8 @@ from matplotlib import pyplot as plt
 leftname = 'images/left.jpeg'
 rightname = 'images/right.jpeg'
 
+EPSILON = 1e-12
+
 def do_sift(imgname):
     img = cv2.imread(imgname)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -37,6 +39,60 @@ def find_correspondence(left, right, num_return=8):
             pairs.append((l, r, left_scores[l]))
     return sorted(pairs, key=lambda x: x[-1])[:num_return]
 
+def run8point(pts1, pts2):
+    #compute centers for normalizations
+    c1, c2 = np.mean(pts1, 0), np.mean(pts2, 0)
+    #compute scales
+    scale1 = (2**.5)/np.mean([l2_distance(x,c1) for x in pts1])
+    scale2 = (2**.5)/np.mean([l2_distance(x,c2) for x in pts2])
+    #normalize
+    normpts1 = (pts1 - c1)*scale1
+    normpts2 = (pts2 - c2)*scale2
+    #matrix A
+    A = np.zeros((9,9), np.float32)
+    for (x1,y1),(x2,y2) in zip(normpts1, normpts2):
+        r = np.expand_dims(np.array([x2*x1, x2*y1, x2, y2*x1, y2*y1, y2, x1, y1, 1],
+                np.float32), -1)
+        A += r*r.T
+
+    #print("py A:", A)
+
+    #eigen value
+    W, V = np.linalg.eig(A)
+    idx = W.argsort()[::-1]
+    W = W[idx]
+    V = V[:,idx]
+
+
+    #print("py W,V:", W,V)
+
+    #take last column of V as solution
+    F0 = np.reshape(V[:,-1], [3,3])
+    #print("py F0", F0)
+
+    #U, w, Vt = np.linalg.svd(F0)
+    w, U, Vt = cv2.SVDecomp(F0)
+    w[2] = .0
+    #print("U: ",U)
+    #print("w: ",w)
+    #print("Vt: ",Vt)
+    F0 = np.matmul(np.matmul(U,np.diag(np.reshape(w,[-1]))),Vt)
+    #print("py F0", F0)
+
+
+    #construct inverse transformation
+    T1 = np.reshape(np.array([scale1, 0, -scale1*c1[0], 0, scale1, -scale1*c1[0], 0, 0, 1],
+            np.float32), [3,3])
+    T2 = np.reshape(np.array([scale2, 0, -scale2*c2[0], 0, scale2, -scale2*c2[0], 0, 0, 1],
+            np.float32), [3,3])
+    F0 = np.matmul(np.matmul(T2.T,F0),T1)
+
+    if abs(F0[2,2]) > EPSILON:
+        F0 *= 1./F0[2,2]
+
+    return F0
+
+
 def main():
     img1 = cv2.imread(leftname,0)  #queryimage # left image
     img2 = cv2.imread(rightname,0) #trainimage # right image
@@ -56,10 +112,11 @@ def main():
 
     pts1 = np.int32(pts1)
     pts2 = np.int32(pts2)
+    #print(pts1, pts2)
     F, mask = cv2.findFundamentalMat(pts1,pts2,cv2.FM_LMEDS)
     # We select only inlier points
-    pts1 = pts1[mask.ravel()==1]
-    pts2 = pts2[mask.ravel()==1]
+    #pts1 = pts1[mask.ravel()==1]
+    #pts2 = pts2[mask.ravel()==1]
 
     def drawlines(img1,img2,lines,pts1,pts2):
         ''' img1 - image on which we draw the epilines for the points in img2
@@ -120,10 +177,12 @@ def sample():
             pts1.append(kp1[m.queryIdx].pt)
     pts1 = np.int32(pts1)
     pts2 = np.int32(pts2)
-    F, mask = cv2.findFundamentalMat(pts1,pts2,cv2.FM_LMEDS)
+    F0, mask = cv2.findFundamentalMat(pts1,pts2,cv2.FM_8POINT)
+    F = run8point(pts1, pts2)
+    #print(F,F0)
     # We select only inlier points
-    pts1 = pts1[mask.ravel()==1]
-    pts2 = pts2[mask.ravel()==1]
+    #pts1 = pts1[mask.ravel()==1]
+    #pts2 = pts2[mask.ravel()==1]
 
     def drawlines(img1,img2,lines,pts1,pts2):
         ''' img1 - image on which we draw the epilines for the points in img2
@@ -157,5 +216,5 @@ def sample():
 
 
 if __name__ == "__main__":
+    #main()
     sample()
-    main()
