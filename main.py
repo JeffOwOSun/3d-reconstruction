@@ -6,8 +6,8 @@ from vgg_P_from_F import vgg_P_from_F
 from triangulation import triangulation
 from plyfile import PlyData, PlyElement
 
-leftname = 'images/left.jpeg'
-rightname = 'images/right.jpeg'
+leftname = 'images/left.png'
+rightname = 'images/right.png'
 
 EPSILON = 1e-12
 
@@ -254,39 +254,46 @@ def sample():
 
     pts1 = np.int32(pts1)
     pts2 = np.int32(pts2)
-    F, mask = cv2.findFundamentalMat(pts1,pts2,cv2.FM_RANSAC)
+    #F, mask = cv2.findFundamentalMat(pts1,pts2,cv2.FM_RANSAC)
+    #F, mask = cv2.findFundamentalMat(pts1,pts2,cv2.FM_8POINT)
+    F, mask = cv2.findFundamentalMat(pts1[:7],pts2[:7],cv2.FM_8POINT)
+    F = F[:3]
     #print(F,F0)
     # We select only inlier points
     pts1 = pts1[mask.ravel()==1]
     pts2 = pts2[mask.ravel()==1]
 
-    def drawlines(img1,img2,lines,pts1,pts2):
+    def drawlines(img1,img2,lines1, lines2,pts1,pts2):
         ''' img1 - image on which we draw the epilines for the points in img2
             lines - corresponding epilines '''
         r,c = img1.shape
         img1 = cv2.cvtColor(img1,cv2.COLOR_GRAY2BGR)
         img2 = cv2.cvtColor(img2,cv2.COLOR_GRAY2BGR)
-        for r,pt1,pt2 in zip(lines,pts1,pts2):
+        for r1,r2,pt1,pt2 in zip(lines1,lines2,pts1[:15],pts2[:15]):
             color = tuple(np.random.randint(0,255,3).tolist())
-            x0,y0 = map(int, [0, -r[2]/r[1] ])
-            x1,y1 = map(int, [c, -(r[2]+r[0]*c)/r[1] ])
-            img1 = cv2.line(img1, (x0,y0), (x1,y1), color,1)
-            img1 = cv2.circle(img1,tuple(pt1),5,color,-1)
-            img2 = cv2.circle(img2,tuple(pt2),5,color,-1)
+            x0,y0 = map(int, [0, -r1[2]/r1[1] ])
+            x1,y1 = map(int, [c, -(r1[2]+r1[0]*c)/r1[1] ])
+            img1 = cv2.line(img1, (x0,y0), (x1,y1), color,10)
+
+            x0,y0 = map(int, [0, -r2[2]/r2[1] ])
+            x1,y1 = map(int, [c, -(r2[2]+r2[0]*c)/r2[1] ])
+            img2 = cv2.line(img2, (x0,y0), (x1,y1), color,10)
+
+            img1 = cv2.circle(img1,tuple(pt1),100,color,-1)
+            img2 = cv2.circle(img2,tuple(pt2),100,color,-1)
         return img1,img2
 
     # Find epilines corresponding to points in right image (second image) and
     # drawing its lines on left image
     lines1 = cv2.computeCorrespondEpilines(pts2.reshape(-1,1,2), 2,F)
     lines1 = lines1.reshape(-1,3)
-    img5,img6 = drawlines(img1,img2,lines1,pts1,pts2)
-    # Find epilines corresponding to points in left image (first image) and
-    # drawing its lines on right image
     lines2 = cv2.computeCorrespondEpilines(pts1.reshape(-1,1,2), 1,F)
     lines2 = lines2.reshape(-1,3)
-    img3,img4 = drawlines(img2,img1,lines2,pts2,pts1)
-    plt.subplot(121),plt.imshow(img5)
-    plt.subplot(122),plt.imshow(img3)
+    img3,img4 = drawlines(img1,img2, lines1, lines2 ,pts1,pts2)
+    # Find epilines corresponding to points in left image (first image) and
+    # drawing its lines on right image
+    plt.subplot(121),plt.imshow(img3)
+    plt.subplot(122),plt.imshow(img4)
     plt.show()
 
 
@@ -346,5 +353,5 @@ def depth():
 
 if __name__ == "__main__":
     #main()
-    #sample()
-    depth()
+    sample()
+    #depth()
