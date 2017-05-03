@@ -2,11 +2,15 @@ import cv2
 import numpy as np
 import scipy.spatial
 from matplotlib import pyplot as plt
+from vgg_P_from_F import vgg_P_from_F
+from triangulation import triangulation
+from plyfile import PlyData, PlyElement
 
 leftname = 'images/left.jpeg'
 rightname = 'images/right.jpeg'
 
 EPSILON = 1e-12
+
 
 def do_sift(imgname):
     img = cv2.imread(imgname)
@@ -186,6 +190,8 @@ def main():
     pts2 = np.int32(pts2)
     #print(pts1, pts2)
     F, mask = cv2.findFundamentalMat(pts1,pts2,cv2.FM_LMEDS)
+    #F = run8point(pts1, pts2)
+    #F = run7point(pts1, pts2)[:3]
     # We select only inlier points
     #pts1 = pts1[mask.ravel()==1]
     #pts2 = pts2[mask.ravel()==1]
@@ -233,28 +239,26 @@ def sample():
     FLANN_INDEX_KDTREE = 0
     index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
     search_params = dict(checks=50)
+
     flann = cv2.FlannBasedMatcher(index_params,search_params)
     matches = flann.knnMatch(des1,des2,k=2)
-    correspondences = find_correspondence(des1, des2, 50)
-
-    for lidx, ridx, distance in correspondences:
-        pts2.append(kp2[ridx].pt)
-        pts1.append(kp1[lidx].pt)
-
-    #import pdb;pdb.set_trace();
+    good = []
+    pts1 = []
+    pts2 = []
     # ratio test as per Lowe's paper
     for i,(m,n) in enumerate(matches):
         if m.distance < 0.8*n.distance:
+            good.append(m)
             pts2.append(kp2[m.trainIdx].pt)
             pts1.append(kp1[m.queryIdx].pt)
+
     pts1 = np.int32(pts1)
     pts2 = np.int32(pts2)
-    #F, mask = cv2.findFundamentalMat(pts1[:7],pts2[:7],cv2.FM_8POINT)
-    F = run7point(pts1, pts2)[:3]
+    F, mask = cv2.findFundamentalMat(pts1,pts2,cv2.FM_RANSAC)
     #print(F,F0)
     # We select only inlier points
-    #pts1 = pts1[mask.ravel()==1]
-    #pts2 = pts2[mask.ravel()==1]
+    pts1 = pts1[mask.ravel()==1]
+    pts2 = pts2[mask.ravel()==1]
 
     def drawlines(img1,img2,lines,pts1,pts2):
         ''' img1 - image on which we draw the epilines for the points in img2
@@ -286,7 +290,61 @@ def sample():
     plt.show()
 
 
+def depth():
+    ##########
+    #step 1: use RANSAC to find foundamental matrix
+    ##########
+    img1 = cv2.imread(leftname,0)  #queryimage # left image
+    img2 = cv2.imread(rightname,0) #trainimage # right image
+    sift = cv2.xfeatures2d.SIFT_create()
+    # find the keypoints and descriptors with SIFT
+    kp1, des1 = sift.detectAndCompute(img1,None)
+    kp2, des2 = sift.detectAndCompute(img2,None)
+    # now do best matchings
+    pts1 = []
+    pts2 = []
+    # FLANN parameters
+    FLANN_INDEX_KDTREE = 0
+    index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+    search_params = dict(checks=50)
+
+    flann = cv2.FlannBasedMatcher(index_params,search_params)
+    matches = flann.knnMatch(des1,des2,k=2)
+    good = []
+    pts1 = []
+    pts2 = []
+    # ratio test as per Lowe's paper
+    for i,(m,n) in enumerate(matches):
+        if m.distance < 0.8*n.distance:
+            good.append(m)
+            pts2.append(kp2[m.trainIdx].pt)
+            pts1.append(kp1[m.queryIdx].pt)
+
+    pts1 = np.int32(pts1)
+    pts2 = np.int32(pts2)
+    F, mask = cv2.findFundamentalMat(pts1,pts2,cv2.FM_RANSAC)
+
+    ##########
+    #step 2: calculate the camera matrix from fundamental matrix
+    ##########
+    P1 = np.eye(3,4)
+    P2 = vgg_P_from_F(F)
+    #print(P1, P2)
+    XwEst = triangulation(pts1.T, P1, pts2.T, P2)
+    #print(XwEst.T)
+    desc = [(x, y, z, 255, 255, 255) for x,y,z in XwEst.T[:, :3]]
+    #print(desc)
+    el = PlyElement.describe(np.array(desc, dtype=[
+        ('x','f4'),
+        ('y','f4'),
+        ('z','f4'),
+        ('red', 'u1'),
+        ('green', 'u1'),
+        ('blue', 'u1')
+        ]), 'vertex')
+    PlyData([el]).write('reconstructed_points.ply')
 
 if __name__ == "__main__":
     #main()
-    sample()
+    #sample()
+    depth()
