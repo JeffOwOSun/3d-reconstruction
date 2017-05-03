@@ -92,6 +92,78 @@ def run8point(pts1, pts2):
 
     return F0
 
+def run7point(pts1, pts2):
+    A = np.zeros((7,9), np.float64)
+    #U = np.zeros((7,9), np.float64)
+    #Vt = np.zeros((9,9), np.float64)
+    #W = np.zeros((7,1), np.float64)
+    c = np.zeros((4), np.float64)
+    #roots = np.zeros((1,3), np.float64)
+
+    #first we form a linear system: ith row of A represents the equation
+    #(pts2[i], 1)'*F*(pts1[i], 1) = 0
+    for idx, (pt0, pt1) in enumerate(zip(pts1[:7], pts2[:7])):
+        x0, y0 = pt0
+        x1, y1 = pt1
+        A[idx] = np.array([x1*x0, x1*y0, x1, y1*x0, y1*y0, y1, x0, y0, 1])
+
+    #svdecomposition
+    W, U, Vt = cv2.SVDecomp(A, flags = 1+4)
+    f1 = Vt[7];
+    f2 = Vt[8];
+
+    #f1 f2 is a basis
+    f1 -= f2
+
+    t0 = f2[4]*f2[8] - f2[5]*f2[7];
+    t1 = f2[3]*f2[8] - f2[5]*f2[6];
+    t2 = f2[3]*f2[7] - f2[4]*f2[6];
+
+    c[3] = f2[0]*t0 - f2[1]*t1 + f2[2]*t2;
+
+    c[2] = f1[0]*t0 - f1[1]*t1 + f1[2]*t2 -\
+    f1[3]*(f2[1]*f2[8] - f2[2]*f2[7]) +\
+    f1[4]*(f2[0]*f2[8] - f2[2]*f2[6]) -\
+    f1[5]*(f2[0]*f2[7] - f2[1]*f2[6]) +\
+    f1[6]*(f2[1]*f2[5] - f2[2]*f2[4]) -\
+    f1[7]*(f2[0]*f2[5] - f2[2]*f2[3]) +\
+    f1[8]*(f2[0]*f2[4] - f2[1]*f2[3]);
+
+    t0 = f1[4]*f1[8] - f1[5]*f1[7];
+    t1 = f1[3]*f1[8] - f1[5]*f1[6];
+    t2 = f1[3]*f1[7] - f1[4]*f1[6];
+
+    c[1] = f2[0]*t0 - f2[1]*t1 + f2[2]*t2 -\
+    f2[3]*(f1[1]*f1[8] - f1[2]*f1[7]) +\
+    f2[4]*(f1[0]*f1[8] - f1[2]*f1[6]) -\
+    f2[5]*(f1[0]*f1[7] - f1[1]*f1[6]) +\
+    f2[6]*(f1[1]*f1[5] - f1[2]*f1[4]) -\
+    f2[7]*(f1[0]*f1[5] - f1[2]*f1[3]) +\
+    f2[8]*(f1[0]*f1[4] - f1[1]*f1[3]);
+
+    c[0] = f1[0]*t0 - f1[1]*t1 + f1[2]*t2;
+
+    n, roots = cv2.solveCubic(c)
+
+    #if n < 1 or n > 3:
+    #    return n
+    F0 = np.zeros((3,9), np.float64)
+    for k in xrange(n):
+        lambdaa = roots[k]
+        mu = 1.
+        s = f1[8]*roots[k] + f2[8]
+
+        if abs(s) > EPSILON:
+            mu = 1./s
+            lambdaa *= mu
+            F0[k,8] = 1.
+        else:
+            F0[k,8] = 0.
+
+        for i in xrange(8):
+            F0[k,i] = f1[i]*lambdaa + f2[i]*mu
+
+    return np.reshape(F0, [9,3])
 
 def main():
     img1 = cv2.imread(leftname,0)  #queryimage # left image
@@ -177,8 +249,8 @@ def sample():
             pts1.append(kp1[m.queryIdx].pt)
     pts1 = np.int32(pts1)
     pts2 = np.int32(pts2)
-    F0, mask = cv2.findFundamentalMat(pts1,pts2,cv2.FM_8POINT)
-    F = run8point(pts1, pts2)
+    #F, mask = cv2.findFundamentalMat(pts1[:7],pts2[:7],cv2.FM_8POINT)
+    F = run7point(pts1, pts2)[:3]
     #print(F,F0)
     # We select only inlier points
     #pts1 = pts1[mask.ravel()==1]
